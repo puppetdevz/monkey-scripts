@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         微信公众号文章转Markdown (优化版)
+// @name         微信公众号文章转Markdown (增强版)
 // @namespace    http://tampermonkey.net/
-// @version      0.3
+// @version      0.4
 // @description  一键复制微信公众号文章为Markdown格式，增强代码块处理和语言检测
-// @author       木偶 (优化增强版)
+// @author       木偶 (增强版)
 // @match        https://mp.weixin.qq.com/s/*
 // @grant        GM_setClipboard
 // @grant        GM_registerMenuCommand
@@ -16,7 +16,7 @@
 // 每次脚本重新加载时，都在控制台打印时间戳，确认最新版本已被加载。
 console.log('脚本已加载:', new Date().toLocaleTimeString())
 
-// 加载highlight.js用于语言检测
+// 更可靠地加载highlight.js用于语言检测
 function loadHighlightJS() {
   return new Promise((resolve, reject) => {
     // 先检查是否已经加载
@@ -25,19 +25,23 @@ function loadHighlightJS() {
       return resolve(window.hljs)
     }
 
-    // 加载highlight.js核心库
+    // 先通过CDN加载highlight.js核心库
     const script = document.createElement('script')
     script.src = 'https://cdn.jsdelivr.net/npm/highlight.js@11.7.0/lib/core.min.js'
     script.onload = () => {
       console.log('highlight.js 核心库加载成功')
 
-      // 加载常用语言包
+      // 增加更完整的编程语言支持
       const commonLanguages = [
         'javascript',
+        'typescript',
+        'jsx',
+        'tsx',
         'python',
         'java',
         'go',
         'cpp',
+        'c',
         'csharp',
         'php',
         'ruby',
@@ -46,15 +50,23 @@ function loadHighlightJS() {
         'rust',
         'bash',
         'shell',
+        'powershell',
         'sql',
         'html',
         'css',
+        'scss',
+        'less',
         'xml',
         'json',
         'yaml',
         'markdown',
+        'dart',
+        'objectivec',
+        'scala',
+        'perl',
       ]
 
+      // 创建一个计数器来跟踪加载进度
       let loadedCount = 0
       commonLanguages.forEach(lang => {
         const langScript = document.createElement('script')
@@ -63,6 +75,19 @@ function loadHighlightJS() {
           loadedCount++
           if (loadedCount === commonLanguages.length) {
             console.log('highlight.js 语言包加载完成')
+            // 确保语言注册成功
+            if (window.hljs) {
+              try {
+                // 注册所有加载的语言
+                commonLanguages.forEach(l => {
+                  if (window.hljs.getLanguage(l)) {
+                    console.log(`语言 ${l} 已注册`)
+                  }
+                })
+              } catch (e) {
+                console.warn('注册语言时出错:', e)
+              }
+            }
             resolve(window.hljs)
           }
         }
@@ -87,7 +112,7 @@ function loadHighlightJS() {
 
 // 主流程代码
 ;(function () {
-  ;('use strict')
+  'use strict'
   let hljs = null
 
   // 提取文章内容
@@ -105,6 +130,100 @@ function loadHighlightJS() {
     // 将HTML内容转换为Markdown格式
     markdown += htmlToMarkdown(content)
     return markdown
+  }
+
+  // 改进的代码语言检测
+  function detectCodeLanguage(code) {
+    // 如果代码太短，可能不好检测
+    if (code.length < 10) return ''
+
+    if (hljs) {
+      try {
+        // 使用highlight.js自动检测语言
+        const result = hljs.highlightAuto(code, null)
+        // 只有当置信度较高时才返回检测到的语言
+        if (result && result.language && result.relevance > 5) {
+          console.log(`检测到语言: ${result.language}, 相关度: ${result.relevance}`)
+          return result.language
+        }
+      } catch (err) {
+        console.warn('语言检测失败:', err)
+      }
+    }
+
+    // 备用检测逻辑 - 通过关键字和语法特征检测
+    // JavaScript
+    if (
+      /\b(const|let|var|function|=>|class|import|export|document\.|window\.)\b/.test(code) ||
+      /\$\(.*\)\..*\(/.test(code) || // jQuery
+      /console\.log\(/.test(code) ||
+      code.includes('addEventListener(')
+    ) {
+      return 'javascript'
+    }
+
+    // TypeScript
+    if (
+      /\b(interface|namespace|implements|private|protected|readonly|as\s+\w+)\b/.test(code) ||
+      /:\s*(string|number|boolean|any|void|never)\b/.test(code)
+    ) {
+      return 'typescript'
+    }
+
+    // Python
+    if (
+      /\bdef\s+\w+\s*\(.*\):|import\s+\w+|from\s+\w+\s+import|if\s+__name__\s*==\s*('|")__main__('|")/.test(code) ||
+      /print\s*\(.+\)/.test(code)
+    ) {
+      return 'python'
+    }
+
+    // Java
+    if (
+      /public\s+(static\s+)?(void|class|interface)|private|protected|@Override/.test(code) ||
+      /import\s+java\./.test(code) ||
+      /System\.out\.print(ln)?\(/.test(code)
+    ) {
+      return 'java'
+    }
+
+    // Go
+    if (/func\s+\w+\s*\(.*\)\s*(\w+\s*)?\{|package\s+\w+|import\s+\(|go\s+func/.test(code)) {
+      return 'go'
+    }
+
+    // C/C++
+    if (/\b(include\s*<|using\s+namespace|#define|int\s+main\s*\(|std::)/.test(code)) {
+      return code.includes('cout') || code.includes('cin') || code.includes('vector<') ? 'cpp' : 'c'
+    }
+
+    // C#
+    if (/\b(using\s+System|namespace\s+\w+|public\s+class|private\s+void)/.test(code)) {
+      return 'csharp'
+    }
+
+    // HTML
+    if (/<(!DOCTYPE|html|head|body|div|span|a|img|script|link|meta)\b/.test(code) || /<\/\w+>/.test(code)) {
+      return 'html'
+    }
+
+    // CSS
+    if (/[\w-]+\s*:\s*[^{};]+;/.test(code) && /\{[\s\S]*?\}/.test(code)) {
+      return 'css'
+    }
+
+    // SQL
+    if (/\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|FROM|WHERE|GROUP BY|ORDER BY|HAVING)\b/i.test(code)) {
+      return 'sql'
+    }
+
+    // Shell/Bash
+    if (/\$\s*\w+|#!/.test(code) || /\b(echo|grep|awk|sed|find|chmod|mkdir|ls|cd)\b/.test(code)) {
+      return 'bash'
+    }
+
+    // 默认值
+    return ''
   }
 
   // 检查元素是否为引用块
@@ -128,21 +247,20 @@ function loadHighlightJS() {
     return hasQuoteStyle && element.textContent.trim().length < 2000
   }
 
-  // Improved code block detection function
+  // 改进的代码块检测函数
   function isCodeBlock(element) {
-    // First check if this is a large container (likely not a code block)
-    // Most code blocks are relatively small compared to the full article
+    // 首先检查是否是大容器（可能不是代码块）
     if (element.clientHeight > 500 && element.clientWidth > 500) {
-      // Large container that takes up significant page space is likely not a code block
+      // 大容器可能不是代码块
       return false
     }
 
-    // Check if this element is the main content container
+    // 检查是否是主内容容器
     if (element.id === 'js_content' || element.classList.contains('rich_media_content')) {
       return false
     }
 
-    // Check for common code block identifiers
+    // 检查常见的代码块标识符
     if (
       element.tagName.toLowerCase() === 'pre' ||
       element.classList.contains('code-snippet') ||
@@ -154,75 +272,47 @@ function loadHighlightJS() {
       return true
     }
 
-    // Check style characteristics of code blocks
+    // 检查代码块的样式特征
     const style = window.getComputedStyle(element)
     const fontFamily = style.fontFamily.toLowerCase()
     const backgroundColor = style.backgroundColor.toLowerCase()
 
-    // Code font detection
+    // 代码字体检测
     const isCodeFont =
       fontFamily.includes('monospace') ||
       fontFamily.includes('courier') ||
       fontFamily.includes('consolas') ||
       fontFamily.includes('menlo') ||
-      fontFamily.includes('monaco')
+      fontFamily.includes('monaco') ||
+      fontFamily.includes('source code') ||
+      fontFamily.includes('fira code') ||
+      fontFamily.includes('jetbrains')
 
-    // Background color check - many code blocks have distinct backgrounds
+    // 背景颜色检查 - 许多代码块有特殊的背景
     const hasDistinctBackground =
       backgroundColor !== 'rgba(0, 0, 0, 0)' &&
       backgroundColor !== 'transparent' &&
-      backgroundColor !== 'rgb(255, 255, 255)' && // white
+      backgroundColor !== 'rgb(255, 255, 255)' && // 白色
       backgroundColor !== '#ffffff'
 
-    // Additional check for code attributes
-    const hasCodeAttributes = element.getAttribute('data-lang') !== null
+    // 检查代码属性
+    const hasCodeAttributes =
+      element.getAttribute('data-lang') !== null ||
+      element.classList.contains('language-') ||
+      Array.from(element.classList).some(cls => cls.startsWith('language-'))
 
-    // Only consider as code block if:
-    // 1. Has code font AND either distinct background or code attributes OR
-    // 2. Has a distinct non-white background AND contains reasonably sized code-like text
+    // 内容检查 - 代码块通常有特定的字符
     const textContent = element.textContent.trim()
+    const hasCodeSyntax = /[{};()=><\[\]]/g.test(textContent)
     const isReasonableCodeSize = textContent.length > 0 && textContent.length < 5000
 
+    // 综合判断代码块特征
     return (
-      (isCodeFont && (hasDistinctBackground || hasCodeAttributes)) ||
-      (hasDistinctBackground && isReasonableCodeSize && textContent.includes('{') && textContent.match(/[;{}()[\]=]/g))
+      (isCodeFont && (hasDistinctBackground || hasCodeAttributes || hasCodeSyntax)) ||
+      (hasDistinctBackground && isReasonableCodeSize && hasCodeSyntax) ||
+      hasCodeAttributes ||
+      (element.parentElement && element.parentElement.tagName.toLowerCase() === 'pre')
     )
-  }
-
-  // 尝试检测代码语言
-  function detectCodeLanguage(code) {
-    if (!hljs) return ''
-
-    try {
-      // 使用highlight.js自动检测语言
-      const detection = hljs.highlightAuto(code, null)
-      if (detection && detection.language) {
-        return detection.language
-      }
-    } catch (err) {
-      console.warn('语言检测失败:', err)
-    }
-
-    // 简单的语言检测规则（当highlight.js无法加载或检测失败时的备选方案）
-    const jsPattern =
-      /var|let|const|function|class|import|export|=>|document\.|window\.|console\.|setTimeout|setInterval/
-    const pythonPattern = /def\s+\w+\s*\(|import\s+\w+|from\s+\w+\s+import|if\s+__name__\s*==\s*('|")__main__('|")/
-    const javaPattern =
-      /public\s+(static\s+)?(void|class|interface|enum)|private|protected|package\s+[\w\.]+;|import\s+[\w\.]+;/
-    const htmlPattern = /<(!DOCTYPE|html|head|body|div|span|a|img|script|link|meta)\b/
-    const cssPattern = /\{[\s\S]*?[\w-]+\s*:\s*[^{};]+;[\s\S]*?\}/
-    const sqlPattern = /SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|FROM|WHERE|GROUP BY|ORDER BY|HAVING/i
-    const shellPattern = /\$\s*\w+|#!/
-
-    if (jsPattern.test(code)) return 'javascript'
-    if (pythonPattern.test(code)) return 'python'
-    if (javaPattern.test(code)) return 'java'
-    if (htmlPattern.test(code)) return 'html'
-    if (cssPattern.test(code)) return 'css'
-    if (sqlPattern.test(code)) return 'sql'
-    if (shellPattern.test(code)) return 'bash'
-
-    return ''
   }
 
   // 处理代码块
@@ -230,16 +320,14 @@ function loadHighlightJS() {
     // 提取代码内容，保留格式
     let codeText = element.innerText.trim()
 
-    // 如果pre或code元素内有换行符，应该保留这些格式
-    if (codeText) {
-      // 检测语言
-      const language = detectCodeLanguage(codeText)
+    // 如果是空的代码块，返回空字符串
+    if (!codeText) return ''
 
-      // 构建Markdown代码块
-      return `\`\`\`${language}\n${codeText}\n\`\`\`\n\n`
-    }
+    // 检测语言 - 增强版
+    const language = detectCodeLanguage(codeText)
 
-    return ''
+    // 构建Markdown代码块
+    return `\`\`\`${language}\n${codeText}\n\`\`\`\n\n`
   }
 
   // HTML转Markdown的实现
@@ -258,9 +346,9 @@ function loadHighlightJS() {
 
       let result = ''
 
-      // Skip processing the main content container as a special block
+      // 跳过处理主内容容器作为特殊块
       if (element.id === 'js_content' || element.classList.contains('rich_media_content')) {
-        // Process children directly without special handling
+        // 直接处理子元素，无需特殊处理
         for (const child of element.children) {
           result += processElement(child, depth + 1)
         }
@@ -273,7 +361,7 @@ function loadHighlightJS() {
       }
 
       // 检查是否为引用块
-      if (isQuoteBlock(element) && depth === 0) {
+      if (isQuoteBlock(element) && depth <= 1) {
         // 引用块内容处理
         const quoteContent = element.textContent.trim()
         if (quoteContent) {
@@ -493,6 +581,7 @@ function loadHighlightJS() {
         if (!hljs) {
           try {
             hljs = await loadHighlightJS()
+            console.log('highlight.js 加载状态:', !!hljs)
           } catch (error) {
             console.warn('加载highlight.js失败，将使用备选方案进行语言检测', error)
           }
@@ -513,6 +602,7 @@ function loadHighlightJS() {
         if (!hljs) {
           try {
             hljs = await loadHighlightJS()
+            console.log('highlight.js 加载状态:', !!hljs)
           } catch (error) {
             console.warn('加载highlight.js失败，将使用备选方案进行语言检测', error)
           }
@@ -580,6 +670,9 @@ function loadHighlightJS() {
     button.textContent = '复制为Markdown'
     button.onclick = copyArticleAsMarkdown
     document.body.appendChild(button)
+
+    // 添加按钮提示
+    button.title = '将当前公众号文章转换为Markdown格式并复制到剪贴板'
   }
 
   // 初始化
