@@ -87,7 +87,7 @@ function loadHighlightJS() {
 
 // 主流程代码
 ;(function () {
-  'use strict'
+  ;('use strict')
   let hljs = null
 
   // 提取文章内容
@@ -128,14 +128,38 @@ function loadHighlightJS() {
     return hasQuoteStyle && element.textContent.trim().length < 2000
   }
 
-  // 检查元素是否为代码块
+  // Improved code block detection function
   function isCodeBlock(element) {
-    // 检查通用的代码块特征
+    // First check if this is a large container (likely not a code block)
+    // Most code blocks are relatively small compared to the full article
+    if (element.clientHeight > 500 && element.clientWidth > 500) {
+      // Large container that takes up significant page space is likely not a code block
+      return false
+    }
+
+    // Check if this element is the main content container
+    if (element.id === 'js_content' || element.classList.contains('rich_media_content')) {
+      return false
+    }
+
+    // Check for common code block identifiers
+    if (
+      element.tagName.toLowerCase() === 'pre' ||
+      element.classList.contains('code-snippet') ||
+      element.classList.contains('code_snippet') ||
+      element.classList.contains('highlight') ||
+      element.classList.contains('prism') ||
+      element.querySelector('code') !== null
+    ) {
+      return true
+    }
+
+    // Check style characteristics of code blocks
     const style = window.getComputedStyle(element)
     const fontFamily = style.fontFamily.toLowerCase()
     const backgroundColor = style.backgroundColor.toLowerCase()
 
-    // 微信代码块的常见特征
+    // Code font detection
     const isCodeFont =
       fontFamily.includes('monospace') ||
       fontFamily.includes('courier') ||
@@ -143,17 +167,26 @@ function loadHighlightJS() {
       fontFamily.includes('menlo') ||
       fontFamily.includes('monaco')
 
-    const hasCodeStyle =
-      (backgroundColor !== 'rgba(0, 0, 0, 0)' && backgroundColor !== 'transparent') ||
-      element.classList.contains('code-snippet') ||
-      element.classList.contains('code_snippet') ||
-      element.classList.contains('highlight') ||
-      element.classList.contains('prism') ||
-      element.querySelector('code') !== null ||
-      element.tagName.toLowerCase() === 'pre' ||
-      element.getAttribute('data-lang') !== null
+    // Background color check - many code blocks have distinct backgrounds
+    const hasDistinctBackground =
+      backgroundColor !== 'rgba(0, 0, 0, 0)' &&
+      backgroundColor !== 'transparent' &&
+      backgroundColor !== 'rgb(255, 255, 255)' && // white
+      backgroundColor !== '#ffffff'
 
-    return (isCodeFont || hasCodeStyle) && element.textContent.trim().length > 0
+    // Additional check for code attributes
+    const hasCodeAttributes = element.getAttribute('data-lang') !== null
+
+    // Only consider as code block if:
+    // 1. Has code font AND either distinct background or code attributes OR
+    // 2. Has a distinct non-white background AND contains reasonably sized code-like text
+    const textContent = element.textContent.trim()
+    const isReasonableCodeSize = textContent.length > 0 && textContent.length < 5000
+
+    return (
+      (isCodeFont && (hasDistinctBackground || hasCodeAttributes)) ||
+      (hasDistinctBackground && isReasonableCodeSize && textContent.includes('{') && textContent.match(/[;{}()[\]=]/g))
+    )
   }
 
   // 尝试检测代码语言
@@ -224,6 +257,15 @@ function loadHighlightJS() {
       if (element.offsetParent === null && element.tagName.toLowerCase() !== 'img') return ''
 
       let result = ''
+
+      // Skip processing the main content container as a special block
+      if (element.id === 'js_content' || element.classList.contains('rich_media_content')) {
+        // Process children directly without special handling
+        for (const child of element.children) {
+          result += processElement(child, depth + 1)
+        }
+        return result
+      }
 
       // 检查是否为代码块
       if (isCodeBlock(element)) {
